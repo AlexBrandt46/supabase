@@ -8,7 +8,7 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/* \
     && update-ca-certificates
 
-RUN npm install -g pnpm@10.34.4
+RUN npm install -g pnpm@11.13.1
 
 WORKDIR /app
 
@@ -39,6 +39,15 @@ FROM dev AS builder
 
 RUN pnpm --filter studio exec next build
 
+# Assemble the runtime tree at /srv in the layout the production stage
+# serves from: Next's self-contained standalone output is the app root,
+# with the static assets and public/ laid alongside it.
+RUN mkdir -p /srv && \
+  cp -a apps/studio/.next/standalone/. /srv/ && \
+  mkdir -p /srv/apps/studio/.next && \
+  cp -a apps/studio/.next/static /srv/apps/studio/.next/static && \
+  cp -a apps/studio/public /srv/apps/studio/public
+
 # Copy only compiled code and dependencies
 FROM dhi.io/node:22.23.1-alpine3.24 AS production
 
@@ -50,6 +59,7 @@ FROM dhi.io/node:22.23.1-alpine3.24 AS production
 COPY --from=builder /app/apps/studio/public ./apps/studio/public
 COPY --from=builder /app/apps/studio/.next/standalone ./
 COPY --from=builder /app/apps/studio/.next/static ./apps/studio/.next/static
+ENV PORT=3000
 EXPOSE 3000
 HEALTHCHECK --interval=5s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})"
 CMD ["node", "apps/studio/server.js"]
